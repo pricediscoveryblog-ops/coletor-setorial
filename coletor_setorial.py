@@ -43,7 +43,9 @@ SAIDAS = Path("saidas")
 B3_PROXY = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall"
 B3_CACHE = Path("cache_b3/empresas_b3.csv")
 B3_CACHE_DIAS = int(os.environ.get("B3_CACHE_DIAS", "30"))
-B3_HEADERS = {"User-Agent": "Mozilla/5.0 (PriceDiscovery-coletor/1.1)", "Accept": "application/json"}
+B3_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0 Safari/537.36", "Accept": "application/json"}
+B3_NAO_CLASSIF = "nao classificados"
 DEMOS = ["DRE", "BPA", "BPP", "DFC_MI", "DFC_MD"]
 COLS = ["CNPJ_CIA", "DT_REFER", "VERSAO", "DENOM_CIA", "ESCALA_MOEDA",
         "ORDEM_EXERC", "DT_FIM_EXERC", "CD_CONTA", "DS_CONTA", "VL_CONTA"]
@@ -122,7 +124,13 @@ def _b3_get(metodo: str, payload: dict):
         try:
             r = requests.get(url, timeout=60, headers=B3_HEADERS)
             r.raise_for_status()
-            return r.json()
+            d = r.json()
+            if isinstance(d, str):  # algumas respostas vêm como JSON dentro de string
+                try:
+                    d = json.loads(d)
+                except ValueError:
+                    d = None
+            return d if isinstance(d, (dict, list)) else None
         except (requests.RequestException, ValueError) as e:
             espera = 3 * (tentativa + 1)
             print(f"  ! B3 {metodo} falhou ({e}); nova tentativa em {espera}s")
@@ -164,10 +172,17 @@ def carregar_b3(atualizar: bool = False) -> pd.DataFrame:
         return _preparar_b3(cache)
     conhecidos = set(cache["codeCVM"]) if not cache.empty else set()
     novos = []
-    pend = [e for e in lista if str(e.get("codeCVM")) not in conhecidos or atualizar]
-    print(f"  {len(lista)} emissores na lista; buscando detalhe de {len(pend)}")
+    # Só busca o detalhe (setor/subsetor/tickers) de quem tem segmento setorial na lista;
+    # "Não Classificados" são fundos, BDRs e emissores só de dívida.
+    classificados = [e for e in lista if norm(e.get("segment")) not in ("", B3_NAO_CLASSIF)]
+    pend = [e for e in classificados if str(e.get("codeCVM")) not in conhecidos or atualizar]
+    print(f"  {len(lista)} emissores na lista, {len(classificados)} com classificação setorial; "
+          f"buscando detalhe de {len(pend)}")
+    falhas = 0
     for i, e in enumerate(pend, 1):
-        det = _b3_get("GetDetail", {"codeCVM": str(e.get("codeCVM")), "language": "pt-br"}) or {}
+        det = _b3_get("GetDetail", {"codeCVM": str(e.get("codeCVM")), "language": "pt-br"})
+        if not isinstance(det, dict):
+            det, falhas = {}, falhas + 1
         outros = det.get("otherCodes") or []
         novos.append({
             "codeCVM": str(e.get("codeCVM") or det.get("codeCVM") or ""),
@@ -176,16 +191,19 @@ def carregar_b3(atualizar: bool = False) -> pd.DataFrame:
             "tradingName": det.get("tradingName") or e.get("tradingName"),
             "cnpj": so_digitos(det.get("cnpj") or e.get("cnpj") or ""),
             "industryClassification": det.get("industryClassification") or "",
+            "segmento_lista": e.get("segment") or "",
             "tickers": ",".join(sorted({o.get("code", "") for o in outros if o.get("code")})),
             "market": det.get("market") or e.get("market") or "",
             "status": det.get("status") or e.get("status") or "",
-            "hasQuotation": det.get("hasQuotation") or "",
+            "hasQuotation": det.get("hasQuotation") or ("S" if str(e.get("status")) == "A" else ""),
             "hasEmissions": str(det.get("hasEmissions", "")),
             "atualizado_em": datetime.now().strftime("%Y-%m-%d"),
         })
         if i % 100 == 0:
             print(f"  ... {i}/{len(pend)}")
         time.sleep(0.25)
+    if falhas:
+        print(f"  ! {falhas} detalhes sem resposta válida: setor/subsetor vazios, segmento vem da lista")
     novos = pd.DataFrame(novos)
     if not cache.empty and not novos.empty:
         cache = cache[~cache["codeCVM"].isin(novos["codeCVM"])]
@@ -202,9 +220,12 @@ def _preparar_b3(df: pd.DataFrame) -> pd.DataFrame:
     partes = df["industryClassification"].str.split(r"\s*/\s*", n=2, expand=True, regex=True)
     for i, c in enumerate(["setor", "subsetor", "segmento"]):
         df[c] = partes[i].fillna("").str.strip() if i in partes.columns else ""
+    if "segmento_lista" in df.columns:  # sem detalhe: usa o segmento da lista
+        df["segmento"] = df["segmento"].where(df["segmento"] != "", df["segmento_lista"])
     df["cnpj"] = df["cnpj"].map(so_digitos)
     df["ticker_principal"] = df["tickers"].map(
         lambda t: next((x for x in t.split(",") if re.fullmatch(r"[A-Z0-9]{4}(3|4|11)", x)), t.split(",")[0] if t else ""))
+    df["ticker_principal"] = df["ticker_principal"].where(df["ticker_principal"] != "", df["issuingCompany"])
     return df
 
 
@@ -251,8 +272,10 @@ def descobrir(padrao: str):
 # ------------------------------------------------------- resolução de empresas
 def _bate_ticker(row, lista) -> bool:
     alvo = {t.upper() for t in lista}
-    tks = set(str(row["tickers"]).split(",")) | {str(row["issuingCompany"])}
-    return bool(alvo & {t.upper() for t in tks})
+    tks = {t.upper() for t in str(row["tickers"]).split(",") if t}
+    emissor = str(row["issuingCompany"]).upper()
+    # casa pelo ticker completo ou, sem tickers no cache, pelo código do emissor (4 letras)
+    return bool(alvo & tks) or any(a[:4] == emissor for a in alvo if emissor)
 
 
 def resolver_empresas(cfg_grupo: dict, cad: pd.DataFrame, b3: pd.DataFrame | None) -> list[dict]:
