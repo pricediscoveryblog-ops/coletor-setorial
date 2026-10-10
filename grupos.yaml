@@ -3,6 +3,7 @@
 # Cada grupo pode ter:
 #   filtro_b3:   seleciona empresas pela classificação setorial da B3 (CNPJ vem da própria B3)
 #     setor / subsetor / segmento:  regex sem acento, minúsculas (ex.: "refino", "exploracao de rodovias")
+#                                   obs.: a B3 usa ponto no lugar de vírgula ("petroleo. gas e biocombustiveis")
 #     incluir_tickers:  se preenchido, mantém só esses (útil quando o segmento B3 mistura negócios)
 #     excluir_tickers:  remove esses
 #     incluir_nao_negociadas: false (padrão) = só emissores com cotação
@@ -16,9 +17,9 @@
 grupos:
   distribuidoras_combustiveis:
     filtro_b3:
-      setor: "petroleo"
-      # A B3 agrupa produtoras, refino e distribuição no mesmo segmento (a confirmar no
-      # comando 'setores'); por isso a lista de tickers abaixo restringe a distribuidoras.
+      # Na B3 só a Vibra está em "Distribuição de Combustíveis"; Ultrapar e Raízen estão em
+      # "Exploração. Refino e Distribuição", junto com Petrobras e PRIO. Daí a lista de tickers.
+      segmento: "distribuicao de combustiveis|refino e distribuicao"
       incluir_tickers: [VBBR3, UGPA3, RAIZ4]
     empresas:
       - nome: Ipiranga Produtos de Petroleo
