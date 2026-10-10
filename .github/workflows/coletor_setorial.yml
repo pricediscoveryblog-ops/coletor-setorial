@@ -1,0 +1,56 @@
+name: coletor-setorial
+
+on:
+  workflow_dispatch:
+    inputs:
+      grupo:
+        description: "Grupo do grupos.yaml (vazio = todos)"
+        required: false
+        default: ""
+  schedule:
+    # dia 10 de abril, maio e julho, 09:00 BRT (12:00 UTC):
+    # abr/mai capturam DFPs de dezembro; jul captura exercícios encerrados em março (ex.: Raízen)
+    - cron: "0 12 10 4,5,7 *"
+
+permissions:
+  contents: write
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache dos ZIPs da CVM
+        uses: actions/cache@v4
+        with:
+          path: cache_cvm
+          key: cvm-dfp-${{ github.run_id }}
+          restore-keys: cvm-dfp-
+
+      - run: pip install -r requirements.txt
+
+      - name: Garantir .gitignore do cache CVM
+        run: grep -qx "cache_cvm/" .gitignore 2>/dev/null || echo "cache_cvm/" >> .gitignore
+
+      - name: Coletar
+        run: |
+          if [ -n "${{ github.event.inputs.grupo }}" ]; then
+            python coletor_setorial.py coletar --grupo "${{ github.event.inputs.grupo }}"
+          else
+            python coletor_setorial.py coletar
+          fi
+
+      - name: Commit das saídas
+        run: |
+          git config user.name "pricediscovery-bot"
+          git config user.email "pricediscovery.blog@gmail.com"
+          git add saidas/ cache_b3/ .gitignore
+          git diff --cached --quiet || git commit -m "coletor setorial: $(date +%Y-%m-%d)"
+          git push
