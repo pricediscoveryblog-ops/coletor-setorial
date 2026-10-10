@@ -15,16 +15,16 @@
 #   python coletor_setorial.py filtrar --segmento "refino"
 
 grupos:
-  distribuidoras_combustiveis:
+  teste_alimentos:
     filtro_b3:
       # Na B3 só a Vibra está em "Distribuição de Combustíveis"; Ultrapar e Raízen estão em
       # "Exploração. Refino e Distribuição", junto com Petrobras e PRIO. Daí a lista de tickers.
-      segmento: "distribuicao de combustiveis|refino e distribuicao"
-      incluir_tickers: [VBBR3, UGPA3, RAIZ4]
+      segmento: "alimentos diversos|alimentos"
+      incluir_tickers: 
     empresas:
-      - nome: Ipiranga Produtos de Petroleo
-        busca: "ipiranga produtos de petroleo"
-        opcional: true
+      - nome: 
+        busca: 
+        opcional: 
         nota: "manual: só se tiver registro próprio na CVM"
 
   # Exemplo de grupo 100% pelo filtro B3 (descomente para usar):
