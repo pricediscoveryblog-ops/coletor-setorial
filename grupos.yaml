@@ -1,0 +1,32 @@
+# grupos.yaml — Price Discovery / coletor setorial
+#
+# Cada grupo pode ter:
+#   filtro_b3:   seleciona empresas pela classificação setorial da B3 (CNPJ vem da própria B3)
+#     setor / subsetor / segmento:  regex sem acento, minúsculas (ex.: "refino", "exploracao de rodovias")
+#     incluir_tickers:  se preenchido, mantém só esses (útil quando o segmento B3 mistura negócios)
+#     excluir_tickers:  remove esses
+#     incluir_nao_negociadas: false (padrão) = só emissores com cotação
+#   empresas:    inclusões manuais (não listadas, categoria B, deslistadas), mesmo formato da v1:
+#     nome, busca (regex no cadastro CVM) ou cnpjs, opcional, nota
+#
+# Para descobrir os nomes exatos dos setores:
+#   python coletor_setorial.py setores
+#   python coletor_setorial.py filtrar --segmento "refino"
+
+grupos:
+  distribuidoras_combustiveis:
+    filtro_b3:
+      setor: "petroleo"
+      # A B3 agrupa produtoras, refino e distribuição no mesmo segmento (a confirmar no
+      # comando 'setores'); por isso a lista de tickers abaixo restringe a distribuidoras.
+      incluir_tickers: [VBBR3, UGPA3, RAIZ4]
+    empresas:
+      - nome: Ipiranga Produtos de Petroleo
+        busca: "ipiranga produtos de petroleo"
+        opcional: true
+        nota: "manual: só se tiver registro próprio na CVM"
+
+  # Exemplo de grupo 100% pelo filtro B3 (descomente para usar):
+  # rodovias:
+  #   filtro_b3:
+  #     segmento: "exploracao de rodovias"
