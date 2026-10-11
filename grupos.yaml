@@ -22,7 +22,7 @@ grupos:
       segmento: "alimentos diversos|alimentos"
       incluir_tickers: 
     empresas:
-      - nome: 
+        nome: 
         busca: 
         opcional: 
         nota: "manual: só se tiver registro próprio na CVM"
